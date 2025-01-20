@@ -7,6 +7,7 @@ const { qrCodeGeneration } = require("../util")
 const { TICKET_STATUS } = require("../util/constants")
 const generatePDF = require("../util/ticketGenerator")
 const userModel = require("../db/models/user.model")
+const { default: mongoose } = require("mongoose")
 const createTicket_service = async (body) => {
     try {
         // eventId, userId,qr,eventcategory,status
@@ -69,98 +70,96 @@ const updateTicket_service = async (body, id) => {
 }
 
 const bookTicket_service = async (body) => {
+    const session = await mongoose.startSession();
     try {
-        let { userId, category, eventId } = body
+        let { userId, category, eventId } = body;
+        console.log("category", category);
 
-        // let categoryC={GENERAL:10,VVIP:2,VIP:5}
-        console.log("category",category)
-        let eventData = await eventModel.findById(eventId)
-        let userData =await userModel.findById(userId)
-        let storeDataToCreateQr = {}
-        console.log("eventData", eventData)
-        let response = {}
-        if(!eventData){
-            return response_service_error({ data: response, message: "Event not Available" })
-        }
-        if (category.GENERAL) {
-            if (eventData.ticketCount.GENERAL != 0 && eventData.ticketCount.GENERAL.size >= category.GENERAL) {
-                storeDataToCreateQr.GENERAL = await ticketModel.insertMany(Array.from({ length: category.GENERAL }).map( (item) => {
-                    return { status: "BOOKED", userId, eventId, category: "GENERAL" }
-                }))
-                // return await ticketModel.insertMany({ status: "BOOKED", userId, eventId, category: "GENERAL" })
-                console.log("eventId", eventId)
-                console.log(eventData.ticketCount.GENERAL - category.GENERAL, "calculation")
-                await eventModel.findByIdAndUpdate(eventId, { $set: { "ticketCount.GENERAL.size": eventData.ticketCount.GENERAL.size - category.GENERAL } })
-            } else {
-                response.GENERAL = "GENERAL Tickets not Awailable"
-            }
-        }
-        if (category.VIP) {
-            if (eventData.ticketCount.VIP != 0 && eventData.ticketCount.VIP.size >= category.VIP) {
-                storeDataToCreateQr.VIP = await ticketModel.insertMany(Array.from({ length: category.VIP }).map((item) => {
-                    return { status: "BOOKED", userId, eventId, category: "VIP" }
-                }))
-                await eventModel.findByIdAndUpdate(eventId, { $set: { "ticketCount.VIP.size": eventData.ticketCount.VIP.size - category.VIP } })
+        
+        session.startTransaction();
 
-            } else {
-                response.VIP = "VIP Tickets not Awailable"
-            }
-        }
-        if (category.VVIP) {
-            if (eventData.ticketCount.VVIP != 0 && eventData.ticketCount.VVIP.size >= category.VVIP) {
-                storeDataToCreateQr.VVIP =await ticketModel.insertMany(Array.from({ length: category.VVIP }).map((item) => {
-                    return { status: "BOOKED", userId, eventId, category: "VVIP" }
-                }))
-                await eventModel.findByIdAndUpdate(eventId, { $set: { "ticketCount.VVIP.size": eventData.ticketCount.VVIP.size - category.VVIP } })
+        let eventData = await eventModel.findById(eventId).session(session);
+        let userData = await userModel.findById(userId).session(session);
+        let storeDataToCreateQr = {};
+        let response = {};
 
-            } else {
-                response.VVIP = "VVIP Tickets not Awailable"
-            }
+        if (!eventData) {
+            await session.abortTransaction();
+            return response_service_error({ data: response, message: "Event not Available" });
         }
-        console.log(response, "response")
-        console.log(JSON.stringify(storeDataToCreateQr), "storeDataToCreateQr")
-        function qrCodeGenerationWithPromise(id, url) {
-            return Promise.resolve(qrCodeGeneration(id, url)); // Wrap it if it's already a promise
-        }
-        if (Object.keys(response).length > 0) {
-            return response_service_error({ data: response, message: "Error While Bookin" })
-        } else {
-            const qrCodesInfo=[]
-            console.log("aya andr")
-            for (const x in storeDataToCreateQr) {
-                const items = storeDataToCreateQr[x] || [];
-                for (const item of items) {
-                    try {
-                        const qrPath = await qrCodeGenerationWithPromise(
-                            `${item._id}_${item.eventId}`,
-                            `http://10.13.0.165:4000/api/v1/ticket/scanTicket?ticketId=${item._id?.toString()}`
-                        );
-                        console.log(qrPath, "qrPath");
-            
-                        qrCodesInfo.push({
-                            imagePath: path.resolve(__dirname, "../asset/", `qrcode_${item._id}_${item.eventId}.png`),
-                            info: `${item.category}-${item._id}`,
-                        });
-                    } catch (error) {
-                        console.error("Error generating QR code:", error);
-                    }
+
+        // Function to handle ticket booking logic
+        const bookTickets = async (categoryKey) => {
+            if (category[categoryKey]) {
+                const ticketCount = eventData.ticketCount[categoryKey]?.size || 0;
+                if (ticketCount >= category[categoryKey]) {
+                    const tickets = Array.from({ length: category[categoryKey] }).map(() => ({
+                        status: "BOOKED",
+                        userId,
+                        eventId,
+                        category: categoryKey,
+                    }));
+                    storeDataToCreateQr[categoryKey] = await ticketModel.insertMany(tickets, { session });
+                    await eventModel.findByIdAndUpdate(
+                        eventId,
+                        { $inc: { [`ticketCount.${categoryKey}.size`]: -category[categoryKey] } },
+                        { session }
+                    );
+                } else {
+                    response[categoryKey] = `${categoryKey} Tickets not Available`;
                 }
             }
-            let outPath="/ticketPdf"
-            generatePDF(qrCodesInfo,outPath,userData.email)   
-            // setTimeout(() => {
-                
-            // }, 3000);
-             
-            return response_service_sucess({ data: [], message: "Ticket Booked Successfully Check Your Mail " })
+        };
+
+        // Book tickets for all categories
+        await bookTickets("GENERAL");
+        await bookTickets("VIP");
+        await bookTickets("VVIP");
+
+        if (Object.keys(response).length > 0) {
+            await session.abortTransaction();
+            return response_service_error({ data: response, message: "Error While Booking" });
         }
 
-        //    await ticketModel.insertMany({status:"ACTIVE"},{userId:userId})
+        
+        await session.commitTransaction();
+
+        // QR Code generation
+        const qrCodeGenerationWithPromise = (id, url) =>
+            Promise.resolve(qrCodeGeneration(id, url));
+
+        const qrCodesInfo = [];
+        for (const category in storeDataToCreateQr) {
+            const items = storeDataToCreateQr[category] || [];
+            for (const item of items) {
+                try {
+                    const qrPath = await qrCodeGenerationWithPromise(
+                        `${item._id}_${item.eventId}`,
+                        `http://10.13.0.165:4000/api/v1/ticket/scanTicket?ticketId=${item._id?.toString()}`
+                    );
+                    qrCodesInfo.push({
+                        imagePath: path.resolve(__dirname, "../asset/", `qrcode_${item._id}_${item.eventId}.png`),
+                        info: `${item.category}-${item._id}`,
+                    });
+                } catch (error) {
+                    console.error("Error generating QR code:", error);
+                }
+            }
+        }
+
+        // Generate PDF
+        let outPath = "/ticketPdf";
+        generatePDF(qrCodesInfo, outPath, userData.email);
+
+        return response_service_sucess({ data: [], message: "Ticket Booked Successfully. Check Your Mail" });
     } catch (err) {
-        console.log("updateTicket_service err", err)
-        return response_service_error({ data: null, message: err.message })
+        console.log("updateTicket_service err", err);
+        await session.abortTransaction();
+        return response_service_error({ data: null, message: err.message });
+    } finally {
+        session.endSession();
     }
-}
+};
 
 
 const scanTicket_service=async(body)=>{
