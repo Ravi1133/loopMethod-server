@@ -1,10 +1,11 @@
-const { createUser_service, getAllUser_service, loginUser_service, getuserById_service, blockUser_service } = require("../services/user.service")
+const { createUser_service, getAllUser_service, loginUser_service, getuserById_service, blockUser_service, verifyUser_service } = require("../services/user.service")
 
 const createUser_controller = async (req, res) => {
     try {
         console.log("data in createuser", req.body)
 
         let serviceData = await createUser_service(req.body)
+        
         console.log("serviceDat", serviceData)
         if (serviceData.status) {
             res.status(200).send(serviceData)
@@ -82,11 +83,26 @@ const blockUser_controller = async (req, res) => {
         res.status(500).send({ status: false, message: "Internal server Error" })
     }
 }
+const verifyUser_controller =async(req,res)=>{
+    try{
+        let userId=req.query.userId
+      let result = await verifyUser_service(userId)
+        if (result.status) {
+            res.status(200).send(result.message)
+        } else {
+            res.status(400).send(result)
+        }
+    }catch(err){
+        console.log("blockUser_controller errorr", err)
 
+        res.status(500).send({ status: false, message: "Internal server Error" })
+    }
+}
 module.exports = {
     createUser_controller,
     getAllUser_controller,
     loginUser_controller,
     getuserById_controller,
-    blockUser_controller
+    blockUser_controller,
+    verifyUser_controller
 }

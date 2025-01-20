@@ -2,6 +2,7 @@ const roleModel = require("../db/models/role.model")
 const userModel = require("../db/models/user.model")
 const { generateToken, getPagingData } = require("../util")
 const { USER_STATUS_OBJ, USER_TYPE_OBJ } = require("../util/constants")
+const { sendEmailForVerification } = require("../util/mail")
 const { response_service_sucess, response_service_error } = require("../util/response")
 const jwt = require("jsonwebtoken")
 const createUser_service = async (body) => {
@@ -17,8 +18,10 @@ const createUser_service = async (body) => {
         }
         let data = new userModel(body)
         let dataSaved = await data.save()
+        let path=process.env.BASE_URL+"/api/v1/user/verifyUser"+`?userId=${dataSaved._id}`
+        sendEmailForVerification(path,body.email)
         console.log(dataSaved, "dataSaved")
-        return response_service_sucess({ data, message: "success" })
+        return response_service_sucess({ data, message: "Please check your mail" })
     } catch (err) {
         console.log(" error in createUser", err.message)
         return response_service_error({ data: null, message: err.message })
@@ -67,6 +70,9 @@ const loginUser_service = async (body) => {
         }
         if(userData.status==USER_STATUS_OBJ.BLOCKED){
             return response_service_error({ data: null, message: "Please Contact To Your Administration" })
+        }
+        if(userData.status==USER_STATUS_OBJ.INACTIVE){
+            return response_service_error({ data: null, message: "Please Verify Your Email" })
         }
         let token = generateToken({ roleName:userData.roleName,roleId:userData.roleId,userId:userData._id })
         console.log("tokentoken",token)
@@ -117,11 +123,32 @@ const  blockUser_service =async (id,data,body)=>{
 
     }
 }
+
+const verifyUser_service =async (id)=>{
+    try{
+        // console.log(data,"data",id)
+       
+        
+       let userData= await userModel.findByIdAndUpdate(id,{status:USER_STATUS_OBJ.ACTIVE},{new:true})
+        if(userData){
+            return response_service_sucess({ data: userData, message: `User ${userData.status} Successfully` })
+        }else{
+            return response_service_error({ data: null, message: "User Does'nt Exist" })
+        }
+    }catch(err){
+        console.log( "getuserById_service err",err)
+        return response_service_error({ data: null, message: "Something went wrong" })
+
+    }
+}
+
+
  
 module.exports = {
     createUser_service,
     getAllUser_service,
     loginUser_service,
     getuserById_service,
-    blockUser_service
+    blockUser_service,
+    verifyUser_service
 }

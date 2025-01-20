@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
-const sendEmailWithPDF = require('./mail');
+const {sendEmailWithPDF} = require('./mail');
 
 // Function to generate a PDF
 async function generatePDF(qrCodesInfo, outputPath, sendTo) {

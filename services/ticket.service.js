@@ -135,7 +135,7 @@ const bookTicket_service = async (body) => {
                 try {
                     const qrPath = await qrCodeGenerationWithPromise(
                         `${item._id}_${item.eventId}`,
-                        `http://10.13.0.165:4000/api/v1/ticket/scanTicket?ticketId=${item._id?.toString()}`
+                        `${process.env.BASE_URL}/api/v1/ticket/scanTicket?ticketId=${item._id?.toString()}`
                     );
                     qrCodesInfo.push({
                         imagePath: path.resolve(__dirname, "../asset/", `qrcode_${item._id}_${item.eventId}.png`),

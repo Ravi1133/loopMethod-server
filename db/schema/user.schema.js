@@ -1,5 +1,5 @@
 const {Schema} =require("mongoose")
-const { USER_TYPE, USER_STATUS } = require("../../util/constants")
+const { USER_TYPE, USER_STATUS, USER_STATUS_OBJ } = require("../../util/constants")
 
  let userSchema=new Schema({
     name:{
@@ -33,7 +33,7 @@ const { USER_TYPE, USER_STATUS } = require("../../util/constants")
         type:String,
         require:true,
         enum:USER_STATUS,
-        default:USER_STATUS[0]
+        default:USER_STATUS_OBJ.INACTIVE
     },
     password:{
         type:String,
